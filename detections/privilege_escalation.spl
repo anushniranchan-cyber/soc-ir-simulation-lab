@@ -1,0 +1,23 @@
+/* =====================================================================
+   DETECTION: Suspicious Privilege Escalation Activity
+   ATT&CK: T1134 - Access Token Manipulation | T1068 - Exploitation for
+           Privilege Escalation | T1055 - Process Injection (related)
+   Tactic: Privilege Escalation
+   ---------------------------------------------------------------------
+   Correlates Sysmon/4688 process creation with privesc indicators:
+   known offensive tooling, encoded PowerShell, and privileged-token
+   assignment (4672) outside of expected admin workflows.
+   ===================================================================== */
+
+index=wineventlog (EventCode=4688 OR EventCode=4672 OR sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1)
+| eval cmd=coalesce(CommandLine, process),
+       proc=coalesce(New_Process_Name, Image, ProcessName)
+| eval privesc_tool=if(match(cmd, "(?i)(mimikatz|sekurlsa|psexec|juicypotato|printspoofer|godpotato|sharpup|winpeas)"), 1, 0),
+       encoded_ps=if(match(cmd, "(?i)powershell.*(-enc(odedcommand)?|/e)\s+[A-Za-z0-9+/=]{80,}"), 1, 0),
+       suspicious_parent=if(match(coalesce(ParentImage, Parent_Process_Name, ""), "(?i)(winword|excel|outlook|acrord32)") AND match(proc, "(?i)(powershell|cmd|wscript|cscript|mshta)"), 1, 0)
+| where privesc_tool=1 OR encoded_ps=1 OR suspicious_parent=1
+| eval severity=case(privesc_tool=1, "critical", true(), "high"),
+       tactic="Privilege Escalation",
+       technique=case(privesc_tool=1, "T1134 / tooling", encoded_ps=1, "T1059.001", true(), "T1059")
+| table _time, ComputerName, user, proc, cmd, privesc_tool, encoded_ps, suspicious_parent, severity, tactic, technique
+| sort - _time
