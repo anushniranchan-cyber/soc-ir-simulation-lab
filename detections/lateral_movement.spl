@@ -1,0 +1,32 @@
+/* =====================================================================
+   DETECTION: Lateral Movement
+   ATT&CK: T1021.004 - WinRM | T1021.006 - Windows Remote Management...
+           T1021.002 - SMB/Windows Admin Shares | T1047 - WMI
+   Tactic: Lateral Movement
+   ---------------------------------------------------------------------
+   Flags network logons (type 3) and remote-service creation tied to
+   known lateral-movement tooling: PsExec, WMI, WinRM, and RDP sessions
+   outside of approved admin jump hosts.
+   ===================================================================== */
+
+index=wineventlog (EventCode=4624 Logon_Type=3) OR (EventCode=7045) OR (sourcetype="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1)
+| eval proc=coalesce(Image, New_Process_Name, Service_Name, ""),
+       cmd=coalesce(CommandLine, "")
+| eval lm_tool=case(
+    match(proc, "(?i)psexec"), "PsExec",
+    match(cmd, "(?i)wmic\s+.*(/node|process call create)"), "WMI",
+    match(proc, "(?i)winrs|winrm"), "WinRM",
+    match(cmd, "(?i)mstsc"), "RDP",
+    match(proc, "(?i)mmc\.exe"), "MMC",
+    1=1, null())
+| where isnotnull(lm_tool)
+| eval approved_admin=if(cidrmatch("192.168.56.0/24", coalesce(src_ip, IpAddress, "")), 0, 1)
+| eval severity=if(approved_admin=1, "critical", "high"),
+       tactic="Lateral Movement",
+       technique=case(lm_tool="PsExec", "T1021.002",
+                     lm_tool="WMI", "T1047",
+                     lm_tool="WinRM", "T1021.006",
+                     lm_tool="RDP", "T1021.001",
+                     true(), "T1021")
+| table _time, ComputerName, user, lm_tool, src_ip, proc, cmd, severity, tactic, technique
+| sort - _time
