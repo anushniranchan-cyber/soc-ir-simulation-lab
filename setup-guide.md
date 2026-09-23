@@ -29,7 +29,13 @@ sudo /opt/splunk/bin/splunk enable listen 9997 -auth admin:changeme
    ```
    Sysmon64.exe -accepteula -i sysmonconfig-export.xml
    ```
-2. Install the **Splunk Universal Forwarder** on Windows and forward `WinEventLog://Security` plus `XmlWinEventLog://Microsoft-Windows-Sysmon/Operational` to 192.168.56.30:9997.
+2. Install **Winlogbeat**, point output to the SIEM:
+   ```yaml
+   output.logstash:
+     hosts: ["192.168.56.30:5044"]
+   # — or use the Splunk TCP input directly —
+   ```
+   (Simplest path: Splunk Universal Forwarder on Windows → forward `WinEventLog://Security` and `XmlWinEventLog://Microsoft-Windows-Sysmon/Operational` to 192.168.56.30:9997.)
 
 ## 4. Atomic Red Team (kali-attacker)
 
@@ -46,8 +52,8 @@ unzip atomic-redteam-linux.zip && cd atomic-redteam
 # 1. On Kali: brute-force simulation (T1110)
 ./atomic-redteam execute -t T1110 -e 1
 
-# 2. On Splunk: paste detections/brute_force.spl into a search
-# 3. Watch the alert fire, then follow the IR playbook workflow
+# 2. On Splunk: paste detections/brute_force.spl into a real-time search
+# 3. Watch the alert fire, then follow playbooks/phishing_response.md style workflow
 ```
 
 ## 6. Snapshots are your friend
